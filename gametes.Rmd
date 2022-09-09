@@ -1,0 +1,290 @@
+---
+title: "gametes results"
+author: "William La Cava"
+date: "May 3, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+TPOT comparison
+```{r tpot comparison, echo=FALSE}
+
+setwd('/media/bill/Drive/PostDoc/analysis/gametes')
+# load tpot results
+tpot <- read.csv("../../results/gametes/tpot/tpot_all_with-trials.tsv",header=TRUE,sep='\t')
+levels(tpot$dataset)[levels(tpot$dataset)=="a10_005h"] <- '2w_10a_0.05'
+levels(tpot$dataset)[levels(tpot$dataset)=="a10_01h"] <- '2w_10a_0.1'
+levels(tpot$dataset)[levels(tpot$dataset)=="a10_02h"] <- '2w_10a_0.2'
+levels(tpot$dataset)[levels(tpot$dataset)=="a10_04h"] <- '2w_10a_0.4'
+levels(tpot$dataset)[levels(tpot$dataset)=="a100_005h"] <- '2w_100a_0.05'
+levels(tpot$dataset)[levels(tpot$dataset)=="a100_01h"] <- '2w_100a_0.1'
+levels(tpot$dataset)[levels(tpot$dataset)=="a100_02h"] <- '2w_100a_0.2'
+levels(tpot$dataset)[levels(tpot$dataset)=="a100_04h"] <- '2w_100a_0.4'
+levels(tpot$dataset)[levels(tpot$dataset)=="a1000_005h"] <- '2w_1000a_0.05'
+levels(tpot$dataset)[levels(tpot$dataset)=="a1000_01h"] <- '2w_1000a_0.1'
+levels(tpot$dataset)[levels(tpot$dataset)=="a1000_02h"] <- '2w_1000a_0.2'
+levels(tpot$dataset)[levels(tpot$dataset)=="a1000_04h"] <- '2w_1000a_0.4'
+levels(tpot$dataset)[levels(tpot$dataset)=="a5000_005h"] <- '2w_5000a_0.05'
+levels(tpot$dataset)[levels(tpot$dataset)=="a5000_01h"] <- '2w_5000a_0.1'
+levels(tpot$dataset)[levels(tpot$dataset)=="a5000_02h"] <- '2w_5000a_0.2'
+levels(tpot$dataset)[levels(tpot$dataset)=="a5000_04h"] <- '2w_5000a_0.4'
+#rename methods
+levels(tpot$method)[levels(tpot$method)=="xgb_only"] <- 'XGBoost'
+levels(tpot$method)[levels(tpot$method)=="mdr_only"] <- 'TPOT-MDR'
+levels(tpot$method)[levels(tpot$method)=="ekf_mdr"] <- 'TPOT-MDR+EKF'
+levels(tpot$method)[levels(tpot$method)=="mdr_pred"] <- 'MDR-Pred'
+levels(tpot$method)[levels(tpot$method)=="logit"] <- 'LR'
+summary(tpot,maxsum=40)
+
+# M4GP results
+m4gp <- read.csv("../../results/gametes/m4gp_2w_results_small_new.csv",header=TRUE,sep='\t')
+summary(subset(m4gp,select=-parameters),maxsum=40)
+
+m4gp_ekf <- read.csv("../../results/gametes/m4gp_ekf_2w_results_small.csv",header=TRUE,sep='\t')
+levels(m4gp_ekf$method)[levels(m4gp_ekf$method)=="M4GP+EKF10-small"] <- "M4GP+EKF"
+summary(subset(m4gp_ekf,select=-parameters),maxsum=40)
+# DNN results
+dnn <- read.csv("../../results/gametes/SkorchNN_results.csv",header=TRUE,sep='\t')
+summary(subset(dnn,select=-parameters),maxsum=20)
+dnn <- subset(dnn,method=="SkorchDNN5")
+levels(dnn$method)[levels(dnn$method)=="SkorchDNN5"] <- 'DNN'
+summary(subset(dnn,select=-parameters),maxsum=30)
+
+results <- merge(m4gp,tpot,all=T)
+results <- merge(results,m4gp_ekf,all=T)
+results <- merge(results,dnn,all=T)
+results$method = factor(results$method,levels = c("LR","XGBoost","DNN","TPOT-MDR","M4GP","M4GP+EKF","TPOT-MDR+EKF","MDR-Pred"))
+results$dataset = factor(results$dataset,levels=c("2w_10a_0.05","2w_10a_0.1","2w_10a_0.2","2w_10a_0.4", 
+                                                  "2w_100a_0.05", "2w_100a_0.1","2w_100a_0.2", "2w_100a_0.4",
+                                                  "2w_1000a_0.05","2w_1000a_0.1","2w_1000a_0.2","2w_1000a_0.4",
+                                                  "2w_5000a_0.05","2w_5000a_0.1","2w_5000a_0.2","2w_5000a_0.4"))
+# results <- subset(results, dataset=="2w_10a_0.1" |  dataset=="2w_10a_0.2" |  dataset=="2w_100a_0.1" | dataset=="2w_100a_0.2" |  dataset=="2w_1000a_0.1" |  dataset=="2w_1000a_0.2")
+summary(subset(results,select=-parameters),maxsum=40)
+
+# get rankings
+source('../../../Automated_modeling/processing/summarySE.R')
+results$bal_accuracy_rank <- ave(results$bal_accuracy, results$dataset, results$trial, FUN = function(x) rank(-x, ties.method = "average"))
+results_rank_mean <- summarySE(results, measurevar="bal_accuracy_rank", groupvars=c("method"))
+
+# plots
+library(ggplot2)
+library(RColorBrewer)
+colorCount = length(levels(results$method))
+getPalette = colorRampPalette(brewer.pal(colorCount, "Spectral"))
+
+# ceiling = ave(subset(results,method=="MDR-Pred")$bal_accuracy,results$dataset)
+# results
+(phop1 <- ggplot(subset(results,grepl("1000a",dataset) | grepl("5000a",dataset)),aes(x=method,y=bal_accuracy,fill=method))
+      +theme_bw()
+      +geom_boxplot(outlier.shape=1,notch=F,alpha=1.0)
+      +theme(legend.title=element_blank(),legend.position="none",axis.text.x=element_text(angle=60,vjust=0.5,size=10))
+      +facet_wrap(~ dataset,scale="free_y",ncol=4)+labs(y="10-fold Cross Validation Balanced Accuracy",x="")+scale_fill_manual(values = getPalette(colorCount))+coord_cartesian(ylim=c(0.4,0.80)))#+scale_y_log10()#+coord_cartesian(ylim = c(9.5, 27))
+ggsave("../../../Papers/Multiclass_GP_journal/hop/figs/2w_results_boxplots.pdf",phop1,width=8.5*1.1,height=5.5*1,units="in",device=cairo_pdf)
+
+(p1 <- ggplot(results,aes(x=method,y=bal_accuracy,fill=method))
+      +theme_bw()
+      +geom_boxplot(outlier.shape=1,notch=F,alpha=1.0)
+      +theme(legend.title=element_blank(),legend.position="none",axis.text.x=element_text(angle=70,vjust=0.5,size=12))
+      +facet_wrap(~ dataset,scale="free_y",ncol=4)+labs(y="10-fold Cross Validation Balanced Accuracy",x="")+scale_fill_manual(values = getPalette(colorCount))+coord_cartesian(ylim=c(0.4,0.80)))#+scale_y_log10()#+coord_cartesian(ylim = c(9.5, 27))
+
+ggsave("../../../Papers/Multiclass_GP_journal/figs/2w_results_boxplots.pdf",p1,width=8.5*1.1,height=11*1,units="in",device=cairo_pdf)
+ggsave("../../../Papers/Multiclass_GP_journal/figs/2w_results_boxplots.eps",p1,width=8.5*1,height=11*1,units="in")
+
+(r <- ggplot(results_rank_mean,aes(x=method,y=bal_accuracy_rank))+geom_bar(stat = "identity",position=position_dodge(width=0.75), colour="black",fill="white",width=0.75)+geom_errorbar(aes(ymin=bal_accuracy_rank-ci, ymax=bal_accuracy_rank+ci), position=position_dodge(width=0.75),width=0.5)+theme_bw()+theme(legend.position="none",legend.title=element_blank(),axis.text.x=element_text(angle=90,vjust=0.5,size=12))+labs(y="Mean Ranking",x="")+labs(title="All Problems")+scale_fill_manual(values = getPalette(colorCount)))#,axis.text = element_text(size=18),axis.title = element_text(size=18)
+ggsave("../../../Papers/Multiclass_GP_journal/figs/2w_results_ranks.pdf",p1,width=6*2,height=4*2,units="in")
+
+#stats
+stat_results = subset(results,trial<29,select=-c(parameters,bal_accuracy_rank))
+stat_results$bal_accuracy_rank <- ave(stat_results$bal_accuracy, stat_results$dataset, stat_results$trial, FUN = function(x) rank(-x, ties.method = "average"))
+stat_results$dataset <- factor(stat_results$dataset)
+stat_results$method <- factor(stat_results$method)
+rank_stats <- summarySE(stat_results, measurevar="bal_accuracy_rank", groupvars=c("dataset","method"))
+source('/media/bill/Drive/Automated_modeling/processing/summarySE.R')
+summary(stat_results,maxsum=40)
+friedman.test(bal_accuracy_rank ~ method | dataset, rank_stats)
+
+source('/media/bill/Drive/Automated_modeling/processing/friedman.r')
+friedman.test.with.post.hoc(bal_accuracy_rank ~ method | dataset, data=rank_stats, to.plot.parallel = F)
+# g <- gridExtra::grid.arrange(p1, r, ncol=2)
+# g
+
+# how often is M4GP+EKF within 5% of the accuracy of MDR-Pred?
+results_mdr_norm = results
+results_mdr_norm$mdr_ave <- ave(results_mdr_norm$bal_accuracy, results_mdr_norm$trial, results_mdr_norm$dataset, results_mdr_norm$method, FUN = function(x) median(x))
+(pn <- ggplot(results_mdr_norm,aes(x=method,y=bal_accuracy-mdr_ave,fill=method))+theme_bw()+geom_boxplot(outlier.shape=1,notch=TRUE,alpha=1.0)+theme(legend.title=element_blank(),legend.position="none",axis.text.x=element_text(angle=90,vjust=0.5,size=12))+facet_wrap(~ dataset,scale="free_y")+labs(y="10-fold Cross Validation Balanced Accuracy",x="")+scale_fill_manual(values = getPalette(colorCount)))#+scale_y_log10()#+coord_cartesian(ylim = c(9.5, 27))
+
+# runtime comparisons
+tpot_runtimes = read.csv("../../analysis/gametes/tpot_runtimes.tsv",header=TRUE,sep='\t')
+summary(tpot_runtimes,maxsum=40)
+runtimes = merge(tpot_runtimes,subset(m4gp,select=c(method,dataset,time)),all=T)
+runtimes = merge(runtimes,subset(m4gp_ekf,select=c(method,dataset,time)),all=T)
+runtimes = merge(runtimes,subset(dnn,select=c(method,dataset,time)),all=T)
+summary(runtimes,maxsum=40)
+runtimes$method = factor(runtimes$method,levels = c("LR","XGBoost","DNN","TPOT-MDR","M4GP","M4GP+EKF","TPOT-MDR+EKF"))
+values <- c(10,100,1000,5000)
+names <- levels(runtimes$dataset)
+index <- c(1,2,3,4)
+
+runtimes$atts <- factor(ifelse(grepl('10a',runtimes$dataset,fixed=T), 10,
+                 ifelse(grepl('100a',runtimes$dataset,fixed=T), 100,
+                 ifelse(grepl('1000a',runtimes$dataset,fixed=T), 1000,
+                 ifelse(grepl('5000a',runtimes$dataset,fixed=T), 5000,
+                            NA  )))))
+
+colorCount = length(levels(runtimes$method))
+getPalette = colorRampPalette(brewer.pal(colorCount, "Spectral"))
+(pthop <- ggplot(subset(runtimes, grepl('1000a',dataset) | grepl('5000a',dataset)),aes(x=method,y=time/60,fill=method))+theme_bw()+geom_boxplot(outlier.shape=1,notch=F,alpha=1.0)+theme(legend.title=element_blank(),legend.position="none",axis.text.x=element_text(angle=60,vjust=0.5,size=10))+facet_wrap(~ atts,nrow=1,ncol=4)+labs(y="Runtime (min)",x="")+scale_y_log10(breaks=c(0.1,1,10,100,1000,10000))+coord_cartesian(ylim=c(.1,10000))+scale_fill_manual(values = getPalette(colorCount)))
+ggsave("../../../Papers/Multiclass_GP_journal/hop/figs/2w_results_runtimes.pdf",pthop,width=3*2,height=3*2,units="in",device=cairo_pdf)
+
+
+(pt <- ggplot(runtimes,aes(x=method,y=time/60,fill=method))+theme_bw()+geom_boxplot(outlier.shape=1,notch=F,alpha=1.0)+theme(legend.title=element_blank(),legend.position="none",axis.text.x=element_text(angle=90,vjust=0.5,size=12))+facet_wrap(~ atts,nrow=1,ncol=4)+labs(y="Runtime (min)",x="")+scale_y_log10(breaks=c(0.1,1,10,100,1000,10000))+coord_cartesian(ylim=c(.1,10000))+scale_fill_manual(values = getPalette(colorCount)))
+
+ggsave("../../../Papers/Multiclass_GP_journal/figs/2w_results_runtimes.pdf",pt,width=6*2,height=3*2,units="in",device=cairo_pdf)
+
+```
+FEW results comparison to RF and LR
+```{r overall results, echo=FALSE}
+setwd('/media/bill/Drive/PostDoc/analysis/gametes')
+
+results <- read.csv("../../results/gametes/few_rf_lr/results_few_rf_lr.csv",header=TRUE,sep='\t')
+results<-na.omit(results)
+levels(results$method)[levels(results$method)=="FEW"] <- 'FEW+DT'
+
+results$method = factor(results$method,levels = c("LR", "RF", "FEW+DT"))
+results$dataset = factor(results$dataset,levels=c("2w_10a_0.1", "2w_10a_0.2", "3w_10a_0.1","3w_10a_0.2", "2w_100a_0.1","2w_100a_0.2", "3w_100a_0.1", "3w_100a_0.2", "2w_1000a_0.1", "2w_1000a_0.2", "3w_1000a_0.1", "3w_1000a_0.2"))
+summary(subset(results,select=-c(model,parameters)),maxsum=40)
+
+# get rankings
+source('../../../Automated_modeling/processing/summarySE.R')
+results$accuracy_rank <- ave(results$accuracy, results$dataset, results$trial, FUN = function(x) rank(-x, ties.method = "average"))
+results_rank_mean <- summarySE(results, measurevar="accuracy_rank", groupvars=c("method"))
+
+# plots
+library(ggplot2)
+library(RColorBrewer)
+colorCount = length(levels(results$method))
+getPalette = colorRampPalette(brewer.pal(colorCount, "Spectral"))
+
+# results
+(p1 <- ggplot(results,aes(x=method,y=accuracy,fill=method))+theme_bw()+geom_boxplot(outlier.shape=1,notch=TRUE,alpha=1.0)+theme(legend.title=element_blank(),legend.position="none",axis.text=element_text(size=14))+facet_wrap(~ dataset,scale="free_y")+labs(y="Test Accuracy",x="")+scale_fill_manual(values = getPalette(colorCount))+coord_cartesian(ylim=c(0.4,0.80)))#+scale_y_log10()#+coord_cartesian(ylim = c(9.5, 27))
+
+ggsave("../../../Presentations/GECCO_2017/few_rf_lr_2w_3w_results_boxplots.eps",p1,width=6*1.5,height=4*1.5,units="in")
+
+(r <- ggplot(results_rank_mean,aes(x=method,y=accuracy_rank,fill=method))+geom_bar(stat = "identity",position=position_dodge(width=0.75), colour="black",width=0.75)+geom_errorbar(aes(ymin=accuracy_rank-ci, ymax=accuracy_rank+ci), position=position_dodge(width=0.75),width=0.5)+theme_bw()+theme(legend.position="none",legend.title=element_blank(),axis.text.x=element_text(size=14))+labs(y="Mean Ranking",x="",size=16)+labs(title="All Problems")+scale_fill_manual(values = getPalette(colorCount)))#,axis.text = element_text(size=18),axis.title = element_text(size=18)
+ggsave("../../../Presentations/GECCO_2017/few_rf_lr_2w_3w_results_ranks.eps",r,width=6,height=4,units="in")
+
+g <- gridExtra::grid.arrange(p1, r, ncol=2)
+g
+
+
+# # odes
+# g2 <- ggplot(ode,aes(x=method,y=mse,fill=method))+theme_bw()+geom_boxplot(outlier.shape=1,notch=FALSE,alpha=1.0)+theme(legend.title=element_blank(),axis.text.x=element_text(angle=45,vjust=0.5,size=12),legend.position="none")+facet_wrap(~ dataset,scale="free_y")+labs(y="Test MSE",x="")+scale_fill_manual(values = getPalette(colorCount))#+coord_cartesian(ylim=c(0,1))
+# g2
+# ggsave("../../../Papers/epsilon_lexicase_journal/figs/ode_boxplots.pdf",g2,width=4*2,heighls trt=4*2,units="in")
+# #[ode$success==TRUE,]
+# g3 <- ggplot(ode[ode$success==TRUE,],aes(x=success,group=method,fill=method))+theme_bw()+geom_bar(aes(x=method),colour="black")+theme(legend.title=element_blank(),legend.position="top")+facet_wrap(~ dataset,scale="free_y")+labs(y="Successes",x="")+scale_fill_manual(values = getPalette(colorCount))+scale_y_continuous(limits=c(0,50))
+# g3
+# ggsave("../../../Papers/epsilon_lexicase_journal/figs/ode_success_bar.pdf",g3,width=4*2,height=4*2,units="in")
+
+```
+Timing
+```{r timing, echo=FALSE}
+# results
+(p2 <- ggplot(results,aes(x=method,y=time,fill=method))+theme_bw()+geom_boxplot(outlier.shape=1,notch=TRUE,alpha=1.0)+theme(legend.title=element_blank(),legend.position="none")+facet_wrap(~ dataset,scale="free_y")+labs(y="Time (Seconds)",x="")+scale_fill_manual(values = getPalette(colorCount)))#+scale_y_log10()#+coord_cartesian(ylim = c(9.5, 27))
+
+ggsave("../../../Papers/epsilon_lexicase_journal/figs/results_runtime_boxplots.pdf",t,width=4*2,height=4*2,units="in")
+```
+Stats
+```{r stats, echo=FALSE}
+methods = levels(results$method)
+problems = levels(factor(results$dataset))
+
+Ap = matrix(nrow=8,ncol=8)
+
+for (i in seq_along(problems)){
+  tmp = subset(results,dataset==problems[i])
+  tmp$dataset = factor(tmp$dataset)
+  tmp$method = factor(tmp$method,levels = c("lasso","rand","tourn","lex","afp","dc","ep-lex-s","ep-lex-d","ep-lex-sd"))
+  p = pairwise.wilcox.test(tmp$mse, g=tmp$method, p.adjust.method = "holm",paired = FALSE)
+  print(problems[i])
+  print(p)
+  Ap[i,] = p$p.value[8,]
+}
+rownames(Ap) = as.character(problems)
+colnames(Ap) = as.character(c(methods[0:7],methods[9]))
+write.table(signif(Ap,digits=3), row.names=as.character(problems), col.names=as.character(c(methods[0:7],methods[9])), sep = " & ", eol = "\\\\ \n", quote=F)
+df = data.frame(Ap)
+# function to format p values
+bold <- function(x) {  ifelse(x <0.05, paste0("{\\bf ", formatC(x, dig=2, format="e"), "}"),formatC(x, dig=2, format="g"))}
+print_AP = bold(Ap)
+cptn = "Significance test $p$-values comparing test MSE using the pair-wise Wilcoxon rank-sum test with Holm correction for multiple comparisons. All significance tests are conducted relative to semi-dynamic $\\epsilon$-lexicase (ep-lex-sd). Bold indicates $p<$ 0.05."
+#print xtable
+library(xtable)
+print(xtable(print_AP,label='tbl:wilcox', caption=cptn),size="\\footnotesize",caption.placement="top",booktabs=T, sanitize.text.function = function(x){x}, type="latex", file="../../../Papers/epsilon_lexicase_journal/tbl_wilcox.tex" )
+
+source('/media/bill/Drive/Automated_modeling/processing/friedman.r')
+
+#results = subset(results,trial<40)
+rank_stats <- summarySE(results, measurevar="mse_rank", groupvars=c("dataset","method"))
+ggplot(rank_stats, aes(x=mse_rank,fill=method)) + geom_density(color="black",alpha=0.9)+scale_fill_manual(values = getPalette(colorCount)) #+geom_histogram(aes(y=..ncount..), position="dodge", binwidth=1, alpha=0.7)
+#+facet_wrap(~ method)#
+
+# sub_ranks <- subset(rank_stats, trials<)
+rank_stats$dataset = factor(rank_stats$dataset)
+rank_stats$method = factor(rank_stats$method)
+summary(rank_stats,maxsum=50)
+friedman.test(mse_rank ~ method | dataset, rank_stats)
+friedman.test.with.post.hoc(mse_rank ~ method | dataset, rank_stats,to.plot.parallel = F)
+
+#anova
+ajuste <- lm(mse_rank ~ method, data=rank_stats)
+summary(ajuste)
+anova(ajuste)
+
+rank_stats.aov = aov(mse_rank ~ method, data=rank_stats)
+print(rank_stats.aov)
+rank_stats.hsd=TukeyHSD(x=rank_stats.aov, 'method', conf.level=0.95)
+print_hsd <- data.frame(rank_stats.hsd$method)
+print_hsd$p.adj = bold(print_hsd$p.adj)
+library(xtable)
+cptn = "Post-hoc pairwise statistical tests of rankings across problems according to Tukey's Honest Significant Difference test. Bold values indicate $p<$ 0.05 with adjustment for multiple comparisons."
+
+hsd_tbl = matrix(nrow=3,ncol=8)
+column_names = levels(rank_stats$method)
+column_names = subset(column_names,column_names!="ep-lex-d")
+rownames(hsd_tbl) = c("ep-lex-s","ep-lex-sd","ep-lex-d")
+colnames(hsd_tbl) = column_names
+
+
+for (m1 in c("ep-lex-s","ep-lex-sd","ep-lex-d")){
+  i2=0
+  for (m2 in column_names){
+    if (m1 == "ep-lex-s"){
+      pair = paste0("ep-lex-s-",m2)
+      hsd_tbl[m1,m2] = print_hsd[pair,]$p.adj
+      print(pair)
+      print(print_hsd[pair,]$p.adj)
+    } 
+    if (m1 == "ep-lex-sd"){
+      pair = paste0("ep-lex-sd-",m2)
+      hsd_tbl[m1,m2] = print_hsd[pair,]$p.adj
+      print(pair)
+      print(print_hsd[pair,]$p.adj)
+    }
+    if (m1 == "ep-lex-d"){
+      pair = paste0("ep-lex-d-",m2)
+      hsd_tbl[m1,m2] = print_hsd[pair,]$p.adj
+      print(pair)
+      print(print_hsd[pair,]$p.adj)
+    }
+    i2 = i2+1
+  }
+}
+#print table
+print(xtable(hsd_tbl,caption=cptn,label='tbl:hsd'),caption.placement="top",booktabs=T, sanitize.text.function = function(x){x})
+print(xtable(hsd_tbl,caption=cptn,label='tbl:hsd'),caption.placement="top",size="\\footnotesize", booktabs=T, sanitize.text.function = function(x){x}, type="latex", file="../../../Papers/epsilon_lexicase_journal/tbl_hsd.tex")
+
+  
+```
